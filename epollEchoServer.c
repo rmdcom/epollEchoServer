@@ -76,6 +76,7 @@ int main (int argc, char *argv[])
     {
       int n, i;
       // Block until some events appears, no timeout (-1)
+       printf("\n Waiting for connections...\n");
       n = epoll_wait (efd, events, MAX_EVENTS, -1);
       for (i = 0; i < n; i++)
 	      {
@@ -159,14 +160,14 @@ int main (int argc, char *argv[])
                   as we are running in edge-triggered mode
                   and won't get a notification again for the same data. 
               */
-              int done = 0;
+              int running = 0;
 
               while (1)
                 {
                   ssize_t count;
                   char buf[BUFFER_SIZE];
 
-                  count = read (events[i].data.fd, buf, sizeof buf);  
+                  count = read (events[i].data.fd, buf, sizeof(buf));  
                   
                   if (count == -1)
                     {
@@ -175,25 +176,25 @@ int main (int argc, char *argv[])
                       if (errno != EAGAIN)
                         {
                           perror ("read() failed !");
-                          done = 1;
+                          running = 1;
                         }
                       break;
                     }
+                      /* End of file. The remote has closed the
+                        connection. */
                   else if (count == 0)
                     {
-                      /* End of file. The remote has closed the
-                         connection. */
-                      done = 1;
+                      running = 1;
                       break;
                     }
                   
                   // ToDo
                   buf[count]=0;
                   char wbuf[BUFFER_SIZE];
-                  int cx=snprintf(wbuf,BUFFER_SIZE,"(FD:%d SEQ:%d) %s",events[i].data.fd, clientMap[events[i].data.fd],buf);
-
+                  //int cx=snprintf(wbuf,BUFFER_SIZE," (FD:%d SEQ:%d) %s",events[i].data.fd, clientMap[events[i].data.fd],buf);
+                  int cx=snprintf(wbuf,BUFFER_SIZE,"%s",buf);
                   /* Write the buffer to standard output (1) and echo back to client fd sdf */
-                  s = write (1, wbuf, cx);
+                  s = write (events[i].data.fd, wbuf, cx);
                   if (s == -1)
                     {
                       perror ("write failed !");
@@ -205,9 +206,9 @@ int main (int argc, char *argv[])
                 tmp++;
                 clientMap[events[i].data.fd]=tmp;
                 
-              if (done)
+              if (running)
                 {
-                  printf ("Closed connection on descriptor %d\n",
+                  printf ("\n Closed connection on descriptor %d\n",
                           events[i].data.fd);
 
                   /* Closing the descriptor will make epoll remove it
