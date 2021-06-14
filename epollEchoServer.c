@@ -20,10 +20,11 @@ std::map<int,int> clientMap;
 int setup_serverSocket (char *port);
 int  fail_check (int exp, const char *msg);
 int accept_new_connection(int sfd, int efd, epoll_event event);
+void * handle_connection(epoll_event *events, int i);
 // Main Program
 int main (int argc, char *argv[])
 {
-  int sfd, s, efd;
+  int sfd, efd;
   struct epoll_event event;
   struct epoll_event *events;
 
@@ -64,7 +65,7 @@ int main (int argc, char *argv[])
     {
       int n, i;
       // Block until some events appears, no timeout (-1)
-       printf("\n Wait for connections...\n");
+       //printf("\n Wait for connections...\n"); //RMDCOM::Debug::
       n = epoll_wait (efd, events, MAX_EVENTS, -1);
       for (i = 0; i < n; i++)
 	      {
@@ -86,81 +87,12 @@ int main (int argc, char *argv[])
             }
           else
             {
-              /* We have data on the fd waiting to be read. 
-                  Read and echo back to client. 
+              /* We have data on the fd waiting to be read and echo back to client. 
                  We shall read each line with line buffered LF
                   as we are running in edge-triggered mode
                   and won't get a notification again for the same data. 
               */
-              int running = 0;
-
-              while (1)
-                {
-                  ssize_t count;
-                  char buffer[BUFFER_SIZE];
-                  
-                  // Read the complete client message
-                  count = read (events[i].data.fd, buffer, sizeof(buffer));  
-
-                  /* If errno == EAGAIN, that means we have read all data. So go back to the main loop. */
-                  if (count == -1)
-                    {
-                      if (errno != EAGAIN)
-                        {
-                          perror ("read() failed !");
-                          running = 1;
-                        }
-                      break;
-                    }
-                  /* End of file. The remote has closed the connection. */
-                  else if (count == 0)
-                    {
-                      running = 1;
-                      break;
-                    }
-                  
-                  // ToDo: Handle the bussiness Logic for requirement
-                  // Tokanize the full client message with LF buffered and echo/write back to client
-                
-                  // null termimnate the message and remove the \n
-                  buffer[count]=0;
-
-                  printf("REQUEST:%s\n",buffer);  
-                  /* Write the buffer echo back to client fd sdf */
-
-                  char tmp_buf[BUFFER_SIZE];                  
-                  char* token;
-                  token = strtok(buffer,"\n");
-                  while(token != NULL)
-                  {
-
-                    printf("Tokens: %s\n",token);
-                    int cx=sprintf(tmp_buf,"%s",token);
-                    tmp_buf[cx]=0;
-                    s = write (events[i].data.fd, tmp_buf, cx);
-                    if (s == -1)
-                    {
-                      perror ("write failed !");
-                      abort ();
-                    }
-                    token = strtok(NULL,"\n");
-                  }
-                }
-                // Increment msg counter local ds
-                int tmp = clientMap[events[i].data.fd];
-                tmp++;
-                clientMap[events[i].data.fd]=tmp;
-                
-              if (running)
-                {
-                  printf ("\n Closed connection on descriptor %d\n",
-                          events[i].data.fd);
-
-                  /* Closing the descriptor will make epoll remove it
-                     from the set of descriptors which are monitored. */
-                  close (events[i].data.fd);
-                  clientMap.erase(events[i].data.fd);
-                }
+              handle_connection(events, i);
             }
         }
     }
@@ -282,4 +214,72 @@ int  fail_check (int exp, const char *msg)
         exit(1);
     }   
     return exp;
+}
+
+void * handle_connection(epoll_event *events, int i)
+{
+  int running = 0;
+  while (1)
+  {
+    ssize_t count;
+    char buffer[BUFFER_SIZE];
+    
+    // Read the complete client message
+    count = read (events[i].data.fd, buffer, sizeof(buffer));  
+
+    /* If errno == EAGAIN, that means we have read all data. So go back to the main loop. */
+    if (count == -1)
+      {
+        if (errno != EAGAIN)
+          {
+            perror ("read() failed !");
+            running = 1;
+          }
+        break;
+      }
+    /* End of file. The remote has closed the connection. */
+    else if (count == 0)
+      {
+        running = 1;
+        break;
+      }
+    
+    // ToDo: Handle the bussiness Logic for requirement
+    // Tokanize the full client message with LF buffered and echo/write back to client
+  
+    // null termimnate the message and remove the \n
+    buffer[count]=0;
+
+    printf("REQUEST<<<<<<<:%s\n",buffer);  
+    /* Write the buffer echo back to client fd sdf */
+
+    char tmp_buf[BUFFER_SIZE];                  
+    char* token;
+    token = strtok(buffer,"\n");
+    while(token != NULL)
+    {
+
+      printf("RESPONSE Token>>>>>>>: %s\n",token);
+      int cx=sprintf(tmp_buf,"%s",token);
+      tmp_buf[cx]=0;
+      fail_check( (write (events[i].data.fd, tmp_buf, cx)), "write failed !");
+      token = strtok(NULL,"\n");
+    }
+  }
+  // Increment msg counter local ds
+  int tmp = clientMap[events[i].data.fd];
+  tmp++;
+  clientMap[events[i].data.fd]=tmp;
+  
+  if (running)
+    {
+      printf ("\n Closed connection on descriptor %d\n",
+              events[i].data.fd);
+
+      /* Closing the descriptor will make epoll remove it
+          from the set of descriptors which are monitored. */
+      close (events[i].data.fd);
+      clientMap.erase(events[i].data.fd);
+    }
+    return NULL;
 }
