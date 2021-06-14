@@ -1,3 +1,14 @@
+/* Solution:
+ * ============
+ * Description     : Single threaded echo server - with epoll I/O events 
+ * compile         : make all
+ * Server Usage    : ./epollEchoServer <port#>
+ * 
+ * Client Usage    : https://packetsender.com/ is used for tests.
+ * 
+ * Author          : Rafi, Dandushaik
+ * Date            : 13.June.2021
+*/
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -5,6 +16,7 @@
 #include<unistd.h>
 #include<fcntl.h>
 #include<errno.h>
+
 #include<sys/types.h>
 #include<sys/socket.h>
 #include<sys/epoll.h>
@@ -18,9 +30,10 @@ std::map<int,int> clientMap;
 
 // function declarations.
 int setup_serverSocket (char *port);
-int  fail_check (int exp, const char *msg);
+int fail_check (int exp, const char *msg);
 int accept_new_connection(int sfd, int efd, epoll_event event);
 void * handle_connection(epoll_event *events, int i);
+
 // Main Program
 int main (int argc, char *argv[])
 {
@@ -28,6 +41,7 @@ int main (int argc, char *argv[])
   struct epoll_event event;
   struct epoll_event *events;
 
+  // CLI Usage check for port number
   if (argc != 2) {
       fprintf (stderr, "Usage: %s [port]\n", argv[0]);
       exit (EXIT_FAILURE);
@@ -54,22 +68,23 @@ int main (int argc, char *argv[])
   event.events = EPOLLIN | EPOLLET;
 
   // Add server socket FD to epoll's watched list
-  
   fail_check( (epoll_ctl (efd, EPOLL_CTL_ADD, sfd, &event)), "epoll_ctl() failed!" ); 
   
-  /* Events buffer used by epoll_wait to list triggered events */
+  // Events buffer used by epoll_wait to list triggered events
   events = (epoll_event*) calloc (MAX_EVENTS, sizeof(event));  
 
   /* The worked event loop */
   while (1)
     {
       int n, i;
+      //printf("\n Wait for connections...\n"); //RMDCOM::Debug::
+
       // Block until some events appears, no timeout (-1)
-       //printf("\n Wait for connections...\n"); //RMDCOM::Debug::
       n = epoll_wait (efd, events, MAX_EVENTS, -1);
+
       for (i = 0; i < n; i++)
 	      {
-          /* An error has occured on this fd, or the socket is not ready for reading*/    
+          // An error has occured on this fd, or the socket is not ready for reading
           if ((events[i].events & EPOLLERR) ||
             (events[i].events & EPOLLHUP) ||
             (!(events[i].events & EPOLLIN)))
@@ -79,19 +94,19 @@ int main (int argc, char *argv[])
               clientMap.erase(events[i].data.fd);
 	            continue;
 	          }
-	        /* server socket accepting new connections */
+	        
+          // server socket accepting new connections
           else if (sfd == events[i].data.fd)
 	          {
               accept_new_connection(sfd, efd, event);
               continue;
             }
+          /* We have data on the fd waiting to be read and echo back to client. 
+              We shall read complete message and tokenize each line with line buffered LF \n 
+              and to echo back to client
+            */
           else
             {
-              /* We have data on the fd waiting to be read and echo back to client. 
-                 We shall read each line with line buffered LF
-                  as we are running in edge-triggered mode
-                  and won't get a notification again for the same data. 
-              */
               handle_connection(events, i);
             }
         }
@@ -106,6 +121,7 @@ int main (int argc, char *argv[])
 
 // public functions definations
 
+// Function to initilize and set the server socket
 int setup_serverSocket (char *port)
 {
   struct addrinfo hints, *res;
@@ -149,6 +165,7 @@ int setup_serverSocket (char *port)
   return sfd;
 }
 
+// Function to accept the new connections
 int accept_new_connection(int sfd, int efd, epoll_event event)
 {
   int s;
@@ -207,15 +224,8 @@ int accept_new_connection(int sfd, int efd, epoll_event event)
   }
   return sfd;
 }
-int  fail_check (int exp, const char *msg)
-{
-    if (exp == SOCKET_ERROR){
-        perror(msg);
-        exit(1);
-    }   
-    return exp;
-}
 
+// Function to handle the connection
 void * handle_connection(epoll_event *events, int i)
 {
   int running = 0;
@@ -282,4 +292,14 @@ void * handle_connection(epoll_event *events, int i)
       clientMap.erase(events[i].data.fd);
     }
     return NULL;
+}
+
+// Error handling
+int  fail_check (int exp, const char *msg)
+{
+    if (exp == SOCKET_ERROR){
+        perror(msg);
+        exit(1);
+    }   
+    return exp;
 }
