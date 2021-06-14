@@ -14,18 +14,18 @@
 #define BUFFER_SIZE 4096
 #define MAX_EVENTS  1024
 #define SOCKET_ERROR (-1)
+std::map<int,int> clientMap;
 
 // function declarations.
 int setup_serverSocket (char *port);
 int  fail_check (int exp, const char *msg);
-
+int accept_new_connection(int sfd, int efd, epoll_event event);
 // Main Program
 int main (int argc, char *argv[])
 {
   int sfd, s, efd;
   struct epoll_event event;
   struct epoll_event *events;
-  std::map<int,int> clientMap;
 
   if (argc != 2) {
       fprintf (stderr, "Usage: %s [port]\n", argv[0]);
@@ -34,8 +34,7 @@ int main (int argc, char *argv[])
 
   // initialize the server socket with port
   sfd = setup_serverSocket(argv[1]);
-
-  if (sfd == -1) abort ();
+  fail_check(sfd, "socket init failed!");
 
   // set socket fd to be non-blocking mode
   int flags = fcntl (sfd, F_GETFL, 0);
@@ -43,33 +42,20 @@ int main (int argc, char *argv[])
   fcntl (sfd, F_SETFL, flags);
 
   // listen socket as passive mode
-  s = listen (sfd, SOMAXCONN);   
-  if (s == -1)
-    {
-      perror ("listen() failed !");
-      abort ();
-    }
-
+  fail_check (listen (sfd, SOMAXCONN), "listen() failed !");   
+  
   // create epoll instance
   efd = epoll_create1 (0); 
-  if (efd == -1)
-    {
-      perror ("epoll_create() failed !");
-      abort ();
-    }
-
+  fail_check (efd,"epoll_create() failed !");
+  
   // make read events using edge triggered mode
   event.data.fd = sfd;
   event.events = EPOLLIN | EPOLLET;
 
   // Add server socket FD to epoll's watched list
-  s = epoll_ctl (efd, EPOLL_CTL_ADD, sfd, &event); 
-  if (s == -1)
-    {
-      perror ("epoll_ctl() failed!");
-      abort ();
-    }
-
+  
+  fail_check( (epoll_ctl (efd, EPOLL_CTL_ADD, sfd, &event)), "epoll_ctl() failed!" ); 
+  
   /* Events buffer used by epoll_wait to list triggered events */
   events = (epoll_event*) calloc (MAX_EVENTS, sizeof(event));  
 
@@ -78,7 +64,7 @@ int main (int argc, char *argv[])
     {
       int n, i;
       // Block until some events appears, no timeout (-1)
-       printf("\n Waiting for connections...\n");
+       printf("\n Wait for connections...\n");
       n = epoll_wait (efd, events, MAX_EVENTS, -1);
       for (i = 0; i < n; i++)
 	      {
@@ -95,63 +81,7 @@ int main (int argc, char *argv[])
 	        /* server socket accepting new connections */
           else if (sfd == events[i].data.fd)
 	          {
-              while (1)
-                {
-                  struct sockaddr in_addr;
-                  socklen_t in_len;
-                  int infd;
-                  char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-
-                  in_len = sizeof in_addr;
-                  // create new socket fd from pending listening sockets in queue
-                  infd = accept (sfd, &in_addr, &in_len); 
-                  if (infd == -1) // error
-                    {
-                      if ((errno == EAGAIN) ||
-                          (errno == EWOULDBLOCK))
-                        {
-                          /* We have processed all incoming connections. */
-                          break;
-                        }
-                      else
-                        {
-                          perror ("accept failed !");
-                          break;
-                        }
-                    }
-
-                  int optval = 1;
-                  // set socket for port reuse
-                  setsockopt(infd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
-                  
-                  /* get the client's IP addr and port num */
-                  s = getnameinfo (&in_addr, in_len,
-                                   hbuf, sizeof hbuf,
-                                   sbuf, sizeof sbuf,
-                                   NI_NUMERICHOST | NI_NUMERICSERV);
-                  if (s == 0)
-                    {
-                      printf("Accepted connection on FD %d "
-                             "(host=%s, port=%s)\n", infd, hbuf, sbuf);
-                    }
-
-                  /* Make the incoming socket non-blocking and add it to the
-                     list of fds to monitor. */        
-                  int flags = fcntl (infd, F_GETFL, 0);
-                  flags |= O_NONBLOCK;
-                  fcntl (infd, F_SETFL, flags);
-
-                  event.data.fd = infd;
-                  event.events = EPOLLIN | EPOLLET;                  
-
-                  s = epoll_ctl (efd, EPOLL_CTL_ADD, infd, &event); 
-                  if (s == -1)
-                    {
-                      perror ("epoll_ctl() failed !");
-                      abort ();
-                    }
-                  clientMap[event.data.fd]=0;  // init msg counter    
-                }
+              accept_new_connection(sfd, efd, event);
               continue;
             }
           else
@@ -287,6 +217,64 @@ int setup_serverSocket (char *port)
   return sfd;
 }
 
+int accept_new_connection(int sfd, int efd, epoll_event event)
+{
+  int s;
+  while (1)
+  {
+    struct sockaddr in_addr;
+    socklen_t in_len;
+    int infd;
+    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+
+    in_len = sizeof in_addr;
+    // create new socket fd from pending listening sockets in queue
+    infd = accept (sfd, &in_addr, &in_len); 
+    if (infd == -1) // error
+      {
+        if ((errno == EAGAIN) ||
+            (errno == EWOULDBLOCK))
+          {
+            /* We have processed all incoming connections. */
+            break;
+          }
+        else
+          {
+            perror ("accept failed !");
+            break;
+          }
+      }
+
+    int optval = 1;
+    // set socket for port reuse
+    setsockopt(infd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+    
+    /* get the client's IP addr and port num */
+    s = getnameinfo (&in_addr, in_len,
+                      hbuf, sizeof hbuf,
+                      sbuf, sizeof sbuf,
+                      NI_NUMERICHOST | NI_NUMERICSERV);
+    if (s == 0)
+      {
+        printf("Accepted connection on FD %d "
+                "(host=%s, port=%s)\n", infd, hbuf, sbuf);
+      }
+
+    /* Make the incoming socket non-blocking and add it to the
+        list of fds to monitor. */        
+    int flags = fcntl (infd, F_GETFL, 0);
+    flags |= O_NONBLOCK;
+    fcntl (infd, F_SETFL, flags);
+
+    event.data.fd = infd;
+    event.events = EPOLLIN | EPOLLET;                  
+
+    fail_check ( (epoll_ctl (efd, EPOLL_CTL_ADD, infd, &event)), "epoll_ctl() failed !"); 
+    
+    clientMap[event.data.fd]=0;  // init msg counter    
+  }
+  return sfd;
+}
 int  fail_check (int exp, const char *msg)
 {
     if (exp == SOCKET_ERROR){
