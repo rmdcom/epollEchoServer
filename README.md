@@ -17,7 +17,9 @@ multiple objects if you want to split your code.
 Solution:
 ============
 solution        : Single threaded echo server - with epoll I/O events 
+
 compile         : make all
-Server Usage    : ./epollEchoServer <port#>
+
+Server Usage    : ./epollEchoServer <port>
 
 Client Usage    : https://packetsender.com/ is used for tests.
