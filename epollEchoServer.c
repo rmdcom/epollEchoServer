@@ -13,9 +13,11 @@
 // Macro defination
 #define BUFFER_SIZE 4096
 #define MAX_EVENTS  1024
+#define SOCKET_ERROR (-1)
 
 // function declarations.
 int setup_serverSocket (char *port);
+int  fail_check (int exp, const char *msg);
 
 // Main Program
 int main (int argc, char *argv[])
@@ -166,13 +168,14 @@ int main (int argc, char *argv[])
                 {
                   ssize_t count;
                   char buf[BUFFER_SIZE];
-
-                  count = read (events[i].data.fd, buf, sizeof(buf));  
                   
+                  // Read the complete client message
+                  count = read (events[i].data.fd, buf, sizeof(buf));  
+                  printf("DBG#1 ==> REQUEST:%s , count: %ld\n",buf, count);
+
+                  /* If errno == EAGAIN, that means we have read all data. So go back to the main loop. */
                   if (count == -1)
                     {
-                      /* If errno == EAGAIN, that means we have read all
-                         data. So go back to the main loop. */
                       if (errno != EAGAIN)
                         {
                           perror ("read() failed !");
@@ -180,20 +183,22 @@ int main (int argc, char *argv[])
                         }
                       break;
                     }
-                      /* End of file. The remote has closed the
-                        connection. */
+                  /* End of file. The remote has closed the connection. */
                   else if (count == 0)
                     {
                       running = 1;
                       break;
                     }
                   
-                  // ToDo
-                  buf[count]=0;
+                  // ToDo: Handle the bussiness Logic for requirement
+                  // Tokanize the full client message with LF buffered and echo/write back to client
+
+                  // null termimnate the message and remove the \n
+                  //buf[count]=0;
+
+                  /* Write the buffer echo back to client fd sdf */
                   char wbuf[BUFFER_SIZE];
-                  //int cx=snprintf(wbuf,BUFFER_SIZE," (FD:%d SEQ:%d) %s",events[i].data.fd, clientMap[events[i].data.fd],buf);
                   int cx=snprintf(wbuf,BUFFER_SIZE,"%s",buf);
-                  /* Write the buffer to standard output (1) and echo back to client fd sdf */
                   s = write (events[i].data.fd, wbuf, cx);
                   if (s == -1)
                     {
@@ -227,7 +232,8 @@ int main (int argc, char *argv[])
 }
 
 
-// functions definations
+// public functions definations
+
 int setup_serverSocket (char *port)
 {
   struct addrinfo hints, *res;
@@ -269,4 +275,13 @@ int setup_serverSocket (char *port)
 
   freeaddrinfo (res);
   return sfd;
+}
+
+int  fail_check (int exp, const char *msg)
+{
+    if (exp == SOCKET_ERROR){
+        perror(msg);
+        exit(1);
+    }   
+    return exp;
 }
