@@ -167,11 +167,10 @@ int main (int argc, char *argv[])
               while (1)
                 {
                   ssize_t count;
-                  char buf[BUFFER_SIZE];
+                  char buffer[BUFFER_SIZE];
                   
                   // Read the complete client message
-                  count = read (events[i].data.fd, buf, sizeof(buf));  
-                  printf("DBG#1 ==> REQUEST:%s , count: %ld\n",buf, count);
+                  count = read (events[i].data.fd, buffer, sizeof(buffer));  
 
                   /* If errno == EAGAIN, that means we have read all data. So go back to the main loop. */
                   if (count == -1)
@@ -192,19 +191,30 @@ int main (int argc, char *argv[])
                   
                   // ToDo: Handle the bussiness Logic for requirement
                   // Tokanize the full client message with LF buffered and echo/write back to client
-
+                
                   // null termimnate the message and remove the \n
-                  //buf[count]=0;
+                  buffer[count]=0;
 
+                  printf("REQUEST:%s\n",buffer);  
                   /* Write the buffer echo back to client fd sdf */
-                  char wbuf[BUFFER_SIZE];
-                  int cx=snprintf(wbuf,BUFFER_SIZE,"%s",buf);
-                  s = write (events[i].data.fd, wbuf, cx);
-                  if (s == -1)
+
+                  char tmp_buf[BUFFER_SIZE];                  
+                  char* token;
+                  token = strtok(buffer,"\n");
+                  while(token != NULL)
+                  {
+
+                    printf("Tokens: %s\n",token);
+                    int cx=sprintf(tmp_buf,"%s",token);
+                    tmp_buf[cx]=0;
+                    s = write (events[i].data.fd, tmp_buf, cx);
+                    if (s == -1)
                     {
                       perror ("write failed !");
                       abort ();
                     }
+                    token = strtok(NULL,"\n");
+                  }
                 }
                 // Increment msg counter local ds
                 int tmp = clientMap[events[i].data.fd];
