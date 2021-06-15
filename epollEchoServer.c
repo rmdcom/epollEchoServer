@@ -33,6 +33,7 @@ int setup_serverSocket (char *port);
 int fail_check (int exp, const char *msg);
 int accept_new_connection(int sfd, int efd, epoll_event event);
 void * handle_connection(epoll_event *events, int i);
+void port_reuse_option(int sfd);
 
 // Main Program
 int main (int argc, char *argv[])
@@ -121,6 +122,12 @@ int main (int argc, char *argv[])
 
 // public functions definations
 
+// Function to port reuse option
+void port_reuse_option(int sfd)
+{
+  int optval = 1;
+  setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+}
 // Function to initilize and set the server socket
 int setup_serverSocket (char *port)
 {
@@ -149,9 +156,8 @@ int setup_serverSocket (char *port)
     return -1;
   }
 
-  // port reuse option
-  int optval = 1;
-  setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+  // port re-use
+  port_reuse_option(sfd);
 
   // bind address (INADDR_ANY) to socket file descriptor.
   status = bind (sfd, res->ai_addr, res->ai_addrlen);  
@@ -194,9 +200,8 @@ int accept_new_connection(int sfd, int efd, epoll_event event)
           }
       }
 
-    int optval = 1;
     // set socket for port reuse
-    setsockopt(infd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+    port_reuse_option(infd);
     
     /* get the client's IP addr and port num */
     s = getnameinfo (&in_addr, in_len,
